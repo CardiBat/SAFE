@@ -21,18 +21,18 @@ SAFE
 │   ├── savedmodel/           # Keras SavedModel (float32)
 │   └── savedmodel_unroll/    # SavedModel “unrolled” for TFLite conversion
 ├── Pipeline/                 # quantization + benchmarking toolchain
-│   ├── make_rep_balanced_commented.py
-│   ├── convert_savedmodel.py
-│   ├── bench_tflite.py
-│   ├── sweep_quant_bench.py
-│   └── qbench_sweep_YYYYMMDD_HHMMSS/   # auto-created experiment root
+│   ├── make_rep_balanced_commented.py        #.npz generator
+│   ├── convert_savedmodel.py                 # full INT8 converter
+│   ├── bench_tflite.py                       # Benchmarking 
+│   ├── sweep_quant_bench.py                  # Pipeline file using the three above 
+│   └── qbench_sweep_YYYYMMDD_HHMMSS/         # auto-created experiment root
 │       ├── config.json
 │       ├── experiments/...              # per-run artifacts (rep/.npz, tflite/.tflite, logs/)
 │       └── results.csv                  # consolidated metrics
 └── STM32 Interfacing/        # minimal CubeIDE project (U5/F4) with X-CUBE-AI
     ├── Prova.ioc             # board config
-    ├── main.c
-    └── app_x-cube-ai.c
+    ├── main.c                # buffering from UART
+    └── app_x-cube-ai.c       # the model’s underlying architecture
 ```
 
 * `Analysis/analisi.py` loads the full CSV, saves summary statistics, correlation heatmap and per-feature histograms to the files listed above. 
@@ -138,10 +138,36 @@ A robust setting used for deployment trials is:
 
 ---
 
-## STM32 embedding (very short)
+### STM32CubeIDE setup and deployment
 
-* Open `STM32 Interfacing/Prova.ioc` in **STM32CubeIDE**, install **X-CUBE-AI**, import the `.tflite`, and let the tool generate the runtime glue.
-* Enable **USART** (115200) for logs and a **Timer** (1 Hz) for periodic acquisition; the project skeleton shows how TX/RX and the AI loop are wired. Build/flash and use a serial terminal to monitor. (See comments in the C sources and the report section on UART, timers, and printf redirection.) 
+To reproduce the on-device experiment:
+
+1. **Open the project**
+   Launch **STM32CubeIDE** and import the folder `STM32 Interfacing/`.
+   Open the file `Prova.ioc` — it already contains the full hardware configuration used in the experiment:
+
+   * **USART2** for serial communication
+   * **TIM2** for periodic triggering
+   * **X-CUBE-AI** middleware for neural inference
+
+2. **Load the quantized model**
+   From CubeIDE’s menu, go to
+   **Software Packs → X-CUBE-AI → Analyze & Validate Network**
+   and import the `.tflite` model generated in the `Pipeline/` directory (for example `model_int8_full.tflite`).
+   The tool will automatically generate the inference stubs inside `app_x-cube-ai.c`.
+
+3. **Build and flash**
+   The provided `main.c` already:
+
+   * Initializes UART and timers
+   * Sets up the AI handler
+   * Executes inference inside the main loop
+     Simply build and flash the firmware to your STM32 board.
+
+4. **Monitor the output**
+   Connect the board via USB, select the correct COM port, and open any serial monitor at **115200 baud** to observe live predictions.
+
+The experiment confirmed **stable real-time inference**, with UART transmission functioning correctly and prediction values consistent with the TensorFlow Lite desktop benchmarks.
 
 ---
 
