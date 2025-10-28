@@ -1,0 +1,17 @@
+{
+  "savedmodel": "../export_cnn_lstm/savedmodel_unroll",
+  "csv": "/home/projects/safe/data/processed-datasets/processed_streaming_row_continuous.csv",
+  "window": 30,
+  "forecast": 10,
+  "nfeat": 16,
+  "balances": "0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6",
+  "max_totals": "500,1000,2000,3000,4000,5000,6000",
+  "threads": 1,
+  "n_rep": 256,
+  "make_rep": "make_rep_balanced_commented.py",
+  "convert": "convert_savedmodel.py",
+  "bench": "bench_tflite.py",
+  "outdir": null,
+  "exp_name": null,
+  "seed": 42
+}
