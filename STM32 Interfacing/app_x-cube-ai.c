@@ -262,6 +262,8 @@ int post_process(ai_i8* data_outs_local[])
     log_uart(msg);
   }
   // Caso B: output quantizzato (U8/S8) – stampa i primi 4 valori grezzi
+  // versione con solo valori rilevanti
+  /*
   else {
     uint8_t *u8 = (uint8_t*)out_buf[0].data;
     uint32_t n = (out_bytes < 8U) ? out_bytes : 8U;
@@ -271,6 +273,28 @@ int post_process(ai_i8* data_outs_local[])
       o += snprintf(msg+o, sizeof(msg)-o, "%u ", (unsigned)u8[i]);
     }
     o += snprintf(msg+o, sizeof(msg)-o, "\r\n");
+    log_uart(msg);
+  }
+   */
+  // versione con tutti i valori e dequantizzati secondo la formula applicata float=(int8−zero_point)×scale
+  else {
+    const float out_scale = 0.052055813f;
+    const int out_zp = 62;
+
+    int8_t *q8 = (int8_t*)out_buf[0].data;
+    uint32_t out_len = out_bytes / sizeof(int8_t);
+
+    char msg[256];
+    int o = snprintf(msg, sizeof(msg), "[RX] Inferenza OK (Q→F): ");
+    for (uint32_t i = 0; i < out_len; ++i) {
+      float deq = (q8[i] - out_zp) * out_scale;
+      o += snprintf(msg + o, sizeof(msg) - o, "%.3f ", deq);
+      if (o > sizeof(msg) - 16) {  // evita overflow buffer
+        log_uart(msg);
+        o = snprintf(msg, sizeof(msg), "    ");  // nuova riga indentata
+      }
+    }
+    snprintf(msg + o, sizeof(msg) - o, "\r\n");
     log_uart(msg);
   }
 
@@ -325,3 +349,4 @@ void MX_X_CUBE_AI_Process(void)
 #ifdef __cplusplus
 }
 #endif
+
