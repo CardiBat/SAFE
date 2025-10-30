@@ -47,7 +47,7 @@
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-extern int ai_push_line_of_19(const float v[19]);
+extern int ai_push_line_of_16(const float v[16]);
 uint8_t rx_byte;
 char    rx_line[256];
 uint16_t rx_len = 0;
@@ -118,7 +118,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  log_uart("[RX] Board pronta. Invia 19 valori separati da virgola, termina con \\n\r\n");
+  log_uart("[RX] Board pronta. Invia 16 valori separati da virgola, termina con \\n\r\n");
   HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
   static uint32_t ok_count = 0;
 
@@ -322,32 +322,32 @@ void log_uart(const char* s) {
 
 static int parse_and_push_line(char* line) {
   // atteso: "v0,v1,...,v18\n"
-  float v[19];
+  float v[16];
   int count = 0;
 
   for (char* p = line; *p; ) {
     char* end;
     float val = strtof(p, &end);
     if (end == p) break;
-    if (count < 19) v[count++] = val;
+    if (count < 16) v[count++] = val;
     if (*end == ',') { p = end + 1; }
     else { p = end; if (*p == '\n' || *p == '\r') p++; }
   }
 
-  if (count != 19) {
+  if (count != 16) {
     char msg[96];
-    snprintf(msg, sizeof(msg), "[RX] ERR parse: attesi 19 valori, trovati %d\r\n", count);
+    snprintf(msg, sizeof(msg), "[RX] ERR parse: attesi 16 valori, trovati %d\r\n", count);
     log_uart(msg);
     return -1;
   }
 
   // opzionale: clamp 0..1
-  for (int i=0;i<19;i++) {
+  for (int i=0;i<16;i++) {
     if (v[i] < 0.f) v[i] = 0.f;
     if (v[i] > 1.f) v[i] = 1.f;
   }
 
-  return ai_push_line_of_19(v);
+  return ai_push_line_of_16(v);
 }
 
 
