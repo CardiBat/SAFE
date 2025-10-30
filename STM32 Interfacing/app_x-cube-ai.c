@@ -59,13 +59,22 @@
 
 /* USER CODE BEGIN includes */
 extern void log_uart(const char* s);
-#define FEAT 19
-#define WIN  30
+
+/* ==== MODEL IO SHAPES (da report/modello) ==== */
+#define FEAT 16          // <— il tuo modello usa 16 feature, NON 19
+#define WIN  30          // finestre 30x16
+
+/* ==== QUANT PARAMS dal modello TFLite ==== */
+static const float IN_SCALE  = 0.170490965f;  // int8 input
+static const int   IN_ZP     = -20;
+static const float OUT_SCALE = 0.052055813f;  // int8 output
+static const int   OUT_ZP    = 62;
 
 static float window[WIN][FEAT];
 static int   w_count = 0;      // quante righe caricate (0..30)
 static int   window_ready = 0; // flag
 /* USER CODE END includes */
+
 
 /* IO buffers ----------------------------------------------------------------*/
 
@@ -178,7 +187,7 @@ static int ai_run(void)
 
 /* USER CODE BEGIN 2 */
 
-int ai_push_line_of_19(const float v[FEAT]) {
+int ai_push_line_of_16(const float v[FEAT]) {
   if (w_count < WIN) {
     memcpy(window[w_count], v, sizeof(float)*FEAT);
     w_count++;
@@ -202,40 +211,51 @@ int ai_push_line_of_19(const float v[FEAT]) {
   }
 }
 /* USER CODE BEGIN 2 */
+/* USER CODE BEGIN 2 */
 static int acquire_and_process_data(ai_i8 **data_in)
 {
   (void)data_in;
-
   if (!window_ready) return -1;
 
-  // prendi i descrittori già inizializzati dal bootstrap
   ai_buffer* in_buf = ai_network_inputs_get(network, NULL);
   if (!in_buf) return -1;
 
-  // Caso A: modello FLOAT32 (consigliato per il bring-up)
-  if (in_buf[0].format == AI_BUFFER_FORMAT_FLOAT) {
-    float *in = (float*)in_buf[0].data;
-    memcpy(in, window, sizeof(window)); // [WIN][FEAT] in row-major
+  /* Verifica dimensione attesa dell'input: 1x30x16 int8 = 480 byte */
+  const uint32_t want_bytes = WIN * FEAT * sizeof(int8_t);
+  if (in_buf[0].size != want_bytes && in_buf[0].format != AI_BUFFER_FORMAT_FLOAT) {
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+             "[ERR] Input bytes=%lu attesi=%lu (non-FLOAT)\r\n",
+             (unsigned long)in_buf[0].size, (unsigned long)want_bytes);
+    log_uart(msg);
+    return -1;
   }
-  // Caso B: modello quantizzato (U8/S8) – mappatura grezza 0..1 → 0..255/−128..127
+
+  /* Caso A: modello FLOAT32 (raro nel tuo setup) */
+  if (in_buf[0].format == AI_BUFFER_FORMAT_FLOAT) {
+    float *dst = (float*)in_buf[0].data;
+    memcpy(dst, window, sizeof(window));  // [WIN][FEAT]
+  }
+  /* Caso B: modello INT8 (il tuo) — quantizzazione CORRETTA */
   else {
-    uint8_t *u8 = (uint8_t*)in_buf[0].data;
-    // NB: per essere corretti servono scale/zero_point del modello.
-    // Per un test rapido con input 0..1 questa mappa "lineare" basta a vedere vita.
+    int8_t *dst = (int8_t*)in_buf[0].data;
     size_t k = 0;
-    for (int r=0; r<WIN; ++r) {
-      for (int c=0; c<FEAT; ++c) {
+    for (int r = 0; r < WIN; ++r) {
+      for (int c = 0; c < FEAT; ++c) {
         float x = window[r][c];
-        if (x < 0.f) x = 0.f;
-        if (x > 1.f) x = 1.f;
-        u8[k++] = (uint8_t)(x * 255.0f + 0.5f);
+        // Se i tuoi dati arrivano già standardizzati (tipo z-score),
+        // NON clampare a [0,1]. Si quantizza direttamente con IN_SCALE/IN_ZP.
+        int q = (int)lrintf(x / IN_SCALE + (float)IN_ZP);
+        if (q < -128) q = -128;
+        if (q >  127) q =  127;
+        dst[k++] = (int8_t)q;
       }
     }
   }
 
-  // la finestra è stata copiata: autorizza ai_run()
-  return 0;
+  return 0;  // finestra pronta per ai_run()
 }
+
 
 int post_process(ai_i8* data_outs_local[])
 {
@@ -277,26 +297,25 @@ int post_process(ai_i8* data_outs_local[])
   }
    */
   // versione con tutti i valori e dequantizzati secondo la formula applicata float=(int8−zero_point)×scale
+  /* Caso B: output quantizzato S8 → dequant e stampa */
   else {
-    const float out_scale = 0.052055813f;
-    const int out_zp = 62;
-
-    int8_t *q8 = (int8_t*)out_buf[0].data;
+    int8_t  *q8  = (int8_t*)out_buf[0].data;
     uint32_t out_len = out_bytes / sizeof(int8_t);
 
     char msg[256];
     int o = snprintf(msg, sizeof(msg), "[RX] Inferenza OK (Q→F): ");
     for (uint32_t i = 0; i < out_len; ++i) {
-      float deq = (q8[i] - out_zp) * out_scale;
-      o += snprintf(msg + o, sizeof(msg) - o, "%.3f ", deq);
-      if (o > sizeof(msg) - 16) {  // evita overflow buffer
+      float y = ( (float)q8[i] - (float)OUT_ZP ) * OUT_SCALE;
+      o += snprintf(msg + o, sizeof(msg) - o, "%.3f ", (double)y);
+      if (o > (int)sizeof(msg) - 16) {
         log_uart(msg);
-        o = snprintf(msg, sizeof(msg), "    ");  // nuova riga indentata
+        o = snprintf(msg, sizeof(msg), "    ");
       }
     }
     snprintf(msg + o, sizeof(msg) - o, "\r\n");
     log_uart(msg);
   }
+
 
   // reset finestra per la prossima inferenza
   w_count = 0;
@@ -349,4 +368,3 @@ void MX_X_CUBE_AI_Process(void)
 #ifdef __cplusplus
 }
 #endif
-
