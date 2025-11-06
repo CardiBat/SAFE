@@ -64,17 +64,33 @@ extern void log_uart(const char* s);
 #define FEAT 16          // <— il tuo modello usa 16 feature, NON 19
 #define WIN  30          // finestre 30x16
 
+
+
 /* ==== QUANT PARAMS dal modello TFLite ==== */
-static const float IN_SCALE  = 0.170490965f;  // int8 input
+/**************************************************
+ * * * * * DA CAMBIARE SE CAMBI MODELLO * * * * *
+ **************************************************/
+/* BEGIN qparams 2000/0.5 */
+static const float IN_SCALE  = 0.170490965f;
 static const int   IN_ZP     = -20;
-static const float OUT_SCALE = 0.052055813f;  // int8 output
+static const float OUT_SCALE = 0.052055813f;
 static const int   OUT_ZP    = 62;
+/* END qparams 2000/0.5 */
+
+/* BEGIN qparams 500/0.6 */
+//static const float IN_SCALE  = 0.170490965f;
+//static const int   IN_ZP     = -20;
+//static const float OUT_SCALE = 0.051727000f;
+//static const int   OUT_ZP    = 63;
+/* END qparams 500/0.6 */
+/**************************************************/
+
+
 
 static float window[WIN][FEAT];
 static int   w_count = 0;      // quante righe caricate (0..30)
 static int   window_ready = 0; // flag
 /* USER CODE END includes */
-
 
 /* IO buffers ----------------------------------------------------------------*/
 
