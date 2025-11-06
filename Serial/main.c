@@ -432,11 +432,14 @@ static int parse_and_push_line(char* line) {
     return -1;
   }
 
-  // opzionale: clamp 0..1
-  for (int i=0;i<16;i++) {
-    if (v[i] < 0.f) v[i] = 0.f;
-    if (v[i] > 1.f) v[i] = 1.f;
-  }
+  /* BEGIN patch main.c — rimuovi clamp z-score */
+    // opzionale: clamp 0..1  ← NO
+    // for (int i=0;i<16;i++) {
+    //   if (v[i] < 0.f) v[i] = 0.f;
+    //   if (v[i] > 1.f) v[i] = 1.f;
+    // }
+  /* END patch main.c */
+
 
   return ai_push_line_of_16(v);
 }
