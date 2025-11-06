@@ -1,3 +1,4 @@
+
 # SAFE — TinyML Anomaly Detection (ARM/RISC-V ready)
 
 This repository collects everything built so far to train, quantize, benchmark, and embed a multivariate time-series anomaly-detection model on microcontrollers (STM32 today; portable to other ARM/RISC-V MCUs). It includes data exploration, model training/export, representative-dataset generation for INT8 quantization, automated sweeps for benchmarking, and a minimal STM32CubeIDE/X-CUBE-AI project to run inference on target.
@@ -8,54 +9,57 @@ This repository collects everything built so far to train, quantize, benchmark, 
 
 ```
 SAFE
-├── Analysis/                 # one-shot EDA over the full dataset
-│   ├── analisi.py            # generates stats + correlation + histograms
+├── Analysis/                      # one-shot EDA over the full dataset
+│   ├── analisi.py                 # generates stats + correlation + histograms
 │   ├── stats_completo.csv
 │   ├── correlazioni_full.png
 │   ├── istogrammi_full.png
 │   └── top_corr_pairs.csv
-├── Training-Export/          # training and export utilities
-│   ├── cnn_lstm.py           # baseline multistep predictor + SavedModel export
-│   └── export_from_h5.py     # helper to re-export from .h5 (when needed)
-├── export_cnn_lstm/          # trained model artifacts
-│   ├── savedmodel/           # Keras SavedModel (float32)
-│   └── savedmodel_unroll/    # SavedModel “unrolled” for TFLite conversion
-├── Pipeline/                 # quantization + benchmarking toolchain
-│   ├── make_rep_balanced_commented.py        #.npz generator
-│   ├── convert_savedmodel.py                 # full INT8 converter
-│   ├── bench_tflite.py                       # Benchmarking 
-│   ├── sweep_quant_bench.py                  # Pipeline file using the three above 
+├── Training-Export/               # training and export utilities
+│   ├── cnn_lstm.py                # baseline multistep predictor + SavedModel export
+│   └── export_from_h5.py          # helper to re-export from .h5 (when needed)
+├── export_cnn_lstm/               # trained model artifacts
+│   ├── savedmodel/                # Keras SavedModel (float32)
+│   └── savedmodel_unroll/         # SavedModel “unrolled” for TFLite conversion
+├── Pipeline/                      # quantization + benchmarking toolchain
+│   ├── make_rep_balanced_commented.py       # .npz generator for representative dataset
+│   ├── convert_savedmodel.py                # full INT8 converter (TFLite)
+│   ├── bench_tflite.py                      # benchmarking of single model run
+│   ├── sweep_quant_bench.py                  # pipeline file orchestrating many runs
 │   └── qbench_sweep_YYYYMMDD_HHMMSS/         # auto-created experiment root
 │       ├── config.json
-│       ├── experiments/...              # per-run artifacts (rep/.npz, tflite/.tflite, logs/)
-│       └── results.csv                  # consolidated metrics
-└── STM32 Interfacing/        # minimal CubeIDE project (U5/F4) with X-CUBE-AI
-    ├── Prova.ioc             # board config
-    ├── main.c                # buffering from UART
-    └── app_x-cube-ai.c       # the model’s underlying architecture
+│       ├── experiments/...                   # per-run artifacts (rep/.npz, tflite/.tflite, logs/)
+│       └── results.csv                       # consolidated metrics for the sweep
+└── STM32 Interfacing/             # minimal CubeIDE project (U5/F4) with X-CUBE-AI
+    ├── Prova.ioc                 # board config
+    ├── main.c                    # buffering from UART
+    └── app_x-cube-ai.c           # the model’s underlying architecture
 ```
 
-* `Analysis/analisi.py` loads the full CSV, saves summary statistics, correlation heatmap and per-feature histograms to the files listed above. 
-* `Training-Export/cnn_lstm.py` trains a compact CNN+LSTM forecaster (30→10 multistep) and exports both `.h5` and `SavedModel` plus a tiny starter representative dataset. 
-* `Pipeline/` contains the representative-dataset builder, converter, single-run benchmark, and a sweep orchestrator that creates per-experiment folders and a single `results.csv`. 
+### Important note on *Keras vs TFLite* folder artefacts
+
+If you still maintain a folder for “Keras_vs_TFLite” (or similar) with older comparison scripts or outINT8 raw logs, **please review** it. Some files may be outdated versions of the pipeline.
+Ensuring that you use the **latest version** of:
+
+* the `golden_compare_all.py` script (with RMSE + LSB logic)
+* the CSV human summaries (`compare_human.csv`)
+* sweep results in `Pipeline/qbench_sweep_*`
+
+will prevent confusion between “old” vs “new” metric definitions.
 
 ---
 
 ## What’s been done so far (short version)
 
-* **Data exploration (EDA).** Produced global stats, correlations, and distributions to understand stability, tails, and cross-sensor relations used later to choose quantization strategy and features. Artifacts are under `Analysis/` as PNG/CSV. 
-* **Baseline model.** Implemented a **compact CNN+LSTM** multi-sensor forecaster (window=30, forecast=10) trained on standardized features; exported to `SavedModel` for conversion. Creates a starter `rep_windows.npz` for quick tests. 
-* **Representative dataset (INT8).** Built a robust creator that: (1) cleans non-numeric/timestamps, (2) standardizes, (3) **scores windows** (optionally passing through the SavedModel), (4) **selects a balanced mix of “normal” and high-score “tail” windows** (e.g., 50/50 over `max_total`), and (5) saves `rep_windows_balanced.npz` + JSON/plot. 
-* **Post-training quantization to INT8** and **benchmarking.** Converted to full-INT8 TFLite using the representative set, then measured Keras vs TFLite deltas (MSE/MAE/MAX) and latency. The **sweep runner** automates a grid over `(max_total × balance)`, logging artifacts and a consolidated table. 
+* **Data exploration (EDA).** Produced global stats, correlations, and distributions to understand stability, tails, and cross-sensor relations used later to choose quantization strategy and features. Artifacts are under `Analysis/` as PNG/CSV.
+* **Baseline model.** Implemented a **compact CNN+LSTM** multivariate forecaster (window=30, forecast=10) trained on standardized features; exported to `SavedModel` for conversion. Starter `rep_windows.npz` provided.
+* **Representative dataset (INT8).** Built a robust tool that: (1) cleans non-numeric/timestamps, (2) standardizes, (3) **scores windows** (optionally passing through the SavedModel), (4) **selects a balanced mix of “normal” and high-score “tail” windows**, and (5) saves `rep_windows_balanced.npz` + JSON/plot.
+* **Post-training quantization to INT8** and **benchmarking.** Converted to full-INT8 TFLite using the representative set, then measured Keras vs TFLite deltas (MSE/MAE/RMSE/MAX) and latency. The **sweep runner** automates a grid over `(max_total × balance)`, logging artifacts and a single results CSV.
 * **MCU bring-up (STM32).** Created a minimal CubeIDE project (U5/F4) with X-CUBE-AI that ingests a `.tflite`, sets up UART/Timer, and runs the network loop; practical notes on printf/UART and 1 Hz acquisition are in the report and C sources.
-
-For background, rationale, and hardware notes (windowing rationale, drift vs spikes, X-CUBE-AI workflow, UART/Timer setup) see the updated report up to page ~70. 
 
 ---
 
 ## Quick start (minimal commands)
-
-> These are orientation snippets, not a full runner. Paths may need adjusting.
 
 ### 0) Environment
 
@@ -64,16 +68,14 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install tensorflow numpy pandas scikit-learn matplotlib
 ```
 
-### 1) Train & export a baseline (float32)
+### 1) Train & export baseline (float32)
 
 ```bash
 python3 Training-Export/cnn_lstm.py
-# -> exports export_cnn_lstm/savedmodel and a starter rep_windows.npz
+# → exports export_cnn_lstm/savedmodel and a starter rep_windows.npz
 ```
 
-The script standardizes numeric columns, creates (window=30, forecast=10) sequences, trains with early-stopping, and saves a Keras **SavedModel**. 
-
-### 2) Build a representative dataset (balanced tails)
+### 2) Build representative dataset (balanced tails)
 
 ```bash
 python3 Pipeline/make_rep_balanced_commented.py \
@@ -84,8 +86,6 @@ python3 Pipeline/make_rep_balanced_commented.py \
   --max_total 2000 --balance 0.5 --seed 42
 ```
 
-This tool auto-handles object/datetime columns, standardizes, **scores windows** (via model if provided), then selects ~p95 “tail” windows + uniform “normal” windows according to `--balance`. Saves NPZ + stats PNG/JSON. 
-
 ### 3) Convert to full-INT8 TFLite
 
 ```bash
@@ -95,9 +95,7 @@ python3 Pipeline/convert_savedmodel.py \
   --outdir Pipeline/tflite_2000_b0p5
 ```
 
-(Uses the representative set for proper INT8 calibration.)
-
-### 4) Benchmark single run
+### 4) Benchmark single run (Keras ↔ TFLite)
 
 ```bash
 python3 Pipeline/bench_tflite.py \
@@ -105,12 +103,9 @@ python3 Pipeline/bench_tflite.py \
   --tflite Pipeline/tflite_2000_b0p5/model_int8_full.tflite \
   --rep Pipeline/rep_2000_b0p5/rep_windows_balanced.npz \
   --n 256 --threads 1
-# Parses Δ MSE/MAE/MAX and Keras/TFLite latency (ms/window).
 ```
 
-(Arguments mirror what the sweep uses under the hood.) 
-
-### 5) Run a full sweep (creates its own folders)
+### 5) Run a full sweep – many configurations
 
 ```bash
 python3 Pipeline/sweep_quant_bench.py \
@@ -118,12 +113,11 @@ python3 Pipeline/sweep_quant_bench.py \
   --csv /path/to/processed_streaming_row_continuous.csv \
   --window 30 --forecast 10 --nfeat 16 \
   --max-totals 500,1000,2000,3000,4000,5000,6000 \
-  --balances 0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6 \
+  --balances 0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60 \
   --threads 1 --n-rep 256
-# Outputs: Pipeline/qbench_sweep_YYYYMMDD_HHMMSS/results.csv (+ per-experiment artifacts)
 ```
 
-The sweep: (1) **creates** a rep NPZ per setting, (2) converts to TFLite, (3) benchmarks and logs Δ metrics & latency, (4) writes a single CSV with quant params for input/output tensors. 
+Each sweep run creates its own experiment folder under `Pipeline/qbench_sweep_…` with `results.csv` and subfolders per config.
 
 ---
 
@@ -131,62 +125,11 @@ The sweep: (1) **creates** a rep NPZ per setting, (2) converts to TFLite, (3) be
 
 A robust setting used for deployment trials is:
 
-* Representative selection: `max_total=2000`, `balance=0.5` (≈50% tails by p95 score).
-* Observed deltas vs Keras (on the test bench): **MSE ≈ 0.37**, **MAE ≈ 0.22**, **MAX ≈ 2.6**, with **range alignment** between Keras and INT8 indicating *no clipping*. Larger reps (e.g., 4000/6000) or unbalanced tails tended to worsen MAE/MSE. 
+* Representative selection: `max_total = 2000`, `balance = 0.5`
+* In benchmark: deltas vs Keras (on test bench) are MSE ≈ 0.13, RMSE ≈ 0.36, MAE ≈ 0.27, MAX ≈ 1.17
+* On-device (STM32) deltas vs TFLite: ΔMAX ≈ 0.052 (≈ 1 LSB) → numerically equivalent implementation
 
-> Why the “balanced tails”? To preserve precision where data actually live (the “bell”) while **including tails** to avoid clipping: we calibrate scales with a controlled share of extreme windows instead of letting them dominate. The representative builder implements exactly this policy. 
-
----
-
-### STM32CubeIDE setup and deployment
-
-To reproduce the on-device experiment:
-
-1. **Open the project**
-   Launch **STM32CubeIDE** and import the folder `STM32 Interfacing/`.
-   Open the file `Prova.ioc` — it already contains the full hardware configuration used in the experiment:
-
-   * **USART2** for serial communication
-   * **TIM2** for periodic triggering
-   * **X-CUBE-AI** middleware for neural inference
-
-2. **Load the quantized model**
-   From CubeIDE’s menu, go to
-   **Software Packs → X-CUBE-AI → Analyze & Validate Network**
-   and import the `.tflite` model generated in the `Pipeline/` directory (for example `model_int8_full.tflite`).
-   The tool will automatically generate the inference stubs inside `app_x-cube-ai.c`.
-
-3. **Build and flash**
-   The provided `main.c` already:
-
-   * Initializes UART and timers
-   * Sets up the AI handler
-   * Executes inference inside the main loop
-     Simply build and flash the firmware to your STM32 board.
-
-4. **Monitor the output**
-   Connect the board via USB, select the correct COM port, and open any serial monitor at **115200 baud** to observe live predictions.
-
-The experiment confirmed **stable real-time inference**, with UART transmission functioning correctly and prediction values consistent with the TensorFlow Lite desktop benchmarks.
+> **Definition of LSB (Least Significant Bit):** the quantization step size (`scale`) of the output tensor. According to the [TensorFlow Lite Quantization Specification](https://www.tensorflow.org/lite/performance/quantization_spec) the reconstruction formula is (r = (q - zp) \times scale) and any difference ≤ 1 LSB is considered *“bit-exact within quantization precision”*. ([fdmcs.math.cnrs.fr][1])
 
 ---
 
-## Conventions & notes
-
-* **Windows/features.** Default `--window 30`, `--forecast 10`, `--nfeat 16` across scripts; adjust to match the trained model. 
-* **SavedModel “unroll.”** Use the **unrolled** SavedModel for cleaner TFLite conversion paths. The sweep and converter expect it. 
-* **Representative scoring.** If a SavedModel is provided, window **scores** come from the model’s response; otherwise a safe proxy is used (input magnitude). Selection mixes top-score “tails” and uniform normal windows. 
-* **Artifacts.** Each sweep run is self-contained under `Pipeline/qbench_sweep_*` with logs for reproducibility and a single `results.csv` to filter/sort best trade-offs. 
-
----
-
-## Suggested next steps
-
-* Lock final feature set (16 cols) from `Analysis/` outputs and freeze a stable SavedModel. 
-* Re-sweep around the **2000/0.5** region with a couple of seeds to confirm stability; promote the winner to MCU. 
-* Optional: quant-aware tweaks (e.g., rep balancing per-channel) if MAX deltas on rare cases matter operationally. 
-
----
-
-**Contacts / Credits**
-Analysis, modeling, quantization pipeline, and STM32 bring-up created and iterated across the files listed above. See comments in each script for more details and inline guidance.
