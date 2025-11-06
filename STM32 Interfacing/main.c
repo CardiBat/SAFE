@@ -34,6 +34,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define RS485_DE_GPIO_Port GPIOA
+#define RS485_DE_Pin       GPIO_PIN_1
+
+static inline void RS485_RX(void) { HAL_GPIO_WritePin(RS485_DE_GPIO_Port, RS485_DE_Pin, GPIO_PIN_RESET); }
+static inline void RS485_TX(void) { HAL_GPIO_WritePin(RS485_DE_GPIO_Port, RS485_DE_Pin, GPIO_PIN_SET); }
 
 /* USER CODE END PD */
 
@@ -44,6 +49,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 
+UART_HandleTypeDef hlpuart1;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
@@ -65,7 +71,10 @@ static void SystemPower_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_ICACHE_Init(void);
+static void MX_LPUART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
+void log_rs485(const char* s);
+void log_vcp(const char* s);
 void log_uart(const char* s);
 static int parse_and_push_line(char* line);
 
@@ -110,16 +119,22 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   MX_ICACHE_Init();
+  MX_LPUART1_UART_Init();
   MX_X_CUBE_AI_Init();
   /* USER CODE BEGIN 2 */
-
+//  RS485_TX();  // DE/RE alto fisso: abilita trasmettitore, disabilita ricevitore
+//  const char *msg = "[RS485] PING\r\n";
+  RS485_TX();  // DE/RE alto fisso → solo trasmissione
+  const char *msg = "[RS485] PING\r\n";
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  RS485_RX();                // parti in ascolto
+  HAL_UART_Receive_IT(&hlpuart1, &rx_byte, 1);
 
-  log_uart("[RX] Board pronta. Invia 16 valori separati da virgola, termina con \\n\r\n");
-  HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+  log_vcp("[DBG] Board pronta su RS-485 (PA2/PA3). Invia 16 valori + \\n su /dev/ttyUSB0\r\n");
+  log_rs485("[RX] Board pronta. Invia 16 valori separati da virgola, termina con \\n\r\n");
   static uint32_t ok_count = 0;
 
   while (1)
@@ -132,17 +147,18 @@ int main(void)
 	    __enable_irq();
 
 	    int r = parse_and_push_line(line_copy);
-	    log_uart("[RX] OK: riga accettata\r\n");   // <— ACK per ogni riga
+	    log_rs485("[RX] OK: riga accettata\r\n");
 	      // se vuoi tenere anche il contatore x5, lascialo sotto
-	      if ((++ok_count % 5U) == 0U) log_uart("[RX] OK: riga accettata (x5)\r\n");
+	      if ((++ok_count % 5U) == 0U) log_rs485("[RX] OK: riga accettata\r\n");
 	  }
+
 
 
     /* USER CODE END WHILE */
 
   MX_X_CUBE_AI_Process();
     /* USER CODE BEGIN 3 */
-	  HAL_Delay(1);
+	  HAL_Delay(1000);
 
   }
   /* USER CODE END 3 */
@@ -248,6 +264,53 @@ static void MX_ICACHE_Init(void)
 }
 
 /**
+  * @brief LPUART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_LPUART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN LPUART1_Init 0 */
+
+  /* USER CODE END LPUART1_Init 0 */
+
+  /* USER CODE BEGIN LPUART1_Init 1 */
+
+  /* USER CODE END LPUART1_Init 1 */
+  hlpuart1.Instance = LPUART1;
+  hlpuart1.Init.BaudRate = 115200;
+  hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
+  hlpuart1.Init.StopBits = UART_STOPBITS_1;
+  hlpuart1.Init.Parity = UART_PARITY_NONE;
+  hlpuart1.Init.Mode = UART_MODE_TX_RX;
+  hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  hlpuart1.FifoMode = UART_FIFOMODE_DISABLE;
+  if (HAL_UART_Init(&hlpuart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&hlpuart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&hlpuart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&hlpuart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN LPUART1_Init 2 */
+
+  /* USER CODE END LPUART1_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -302,6 +365,7 @@ static void MX_USART1_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
 
   /* USER CODE END MX_GPIO_Init_1 */
@@ -309,16 +373,43 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PA1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
-void log_uart(const char* s) {
+void log_rs485(const char* s) {
+  RS485_TX();
+  HAL_UART_Transmit(&hlpuart1, (uint8_t*)s, strlen(s), HAL_MAX_DELAY);
+  // aspetta fine TX per non tagliare l'ultima byte prima di tornare in RX
+  while (__HAL_UART_GET_FLAG(&hlpuart1, UART_FLAG_TC) == RESET) {}
+  RS485_RX();
+}
+
+void log_vcp(const char* s) {
   extern UART_HandleTypeDef huart1;
   HAL_UART_Transmit(&huart1, (uint8_t*)s, strlen(s), HAL_MAX_DELAY);
 }
+
+//wrapper al volo da togliere
+void log_uart(const char* s) {
+  // compatibilità con codice Cube.AI
+  log_rs485(s);   // se vuoi far passare tutto su RS-485
+  // oppure log_vcp(s); se vuoi mantenerlo sul VCP
+}
+
+
 
 static int parse_and_push_line(char* line) {
   // atteso: "v0,v1,...,v18\n"
@@ -341,11 +432,14 @@ static int parse_and_push_line(char* line) {
     return -1;
   }
 
-  // opzionale: clamp 0..1
-  for (int i=0;i<16;i++) {
-    if (v[i] < 0.f) v[i] = 0.f;
-    if (v[i] > 1.f) v[i] = 1.f;
-  }
+  /* BEGIN patch main.c — rimuovi clamp z-score */
+    // opzionale: clamp 0..1  ← NO
+    // for (int i=0;i<16;i++) {
+    //   if (v[i] < 0.f) v[i] = 0.f;
+    //   if (v[i] > 1.f) v[i] = 1.f;
+    // }
+  /* END patch main.c */
+
 
   return ai_push_line_of_16(v);
 }
@@ -378,7 +472,7 @@ static int parse_and_push_line(char* line) {
 
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-  if (huart->Instance == USART1) {
+  if (huart->Instance == LPUART1) {
     char c = (char)rx_byte;
 
     if (c == '\n') {
@@ -387,22 +481,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
         line_ready = 1;
       }
       rx_len = 0;
-    }
-    else if (c == '\r') {
-      // ignora
-    }
-    else {
-      if (rx_len < sizeof(rx_line)-1) {
-        rx_line[rx_len++] = c;
-      } else {
-        rx_len = 0; // overflow reset
-      }
+    } else if (c != '\r') {
+      if (rx_len < sizeof(rx_line)-1) rx_line[rx_len++] = c;
+      else rx_len = 0; // overflow → reset
     }
 
-    // Riarma subito RX senza fare log UART qui dentro
-    HAL_UART_Receive_IT(huart, &rx_byte, 1);
+    HAL_UART_Receive_IT(&hlpuart1, &rx_byte, 1); // ri-arma RX su LPUART1
   }
 }
+
 
 
 
